@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Security Tool</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0a0f1c;
+            color: #00f7ff;
+            text-align: center;
+        }
+        .container {
+            width: 50%;
+            margin: auto;
+            margin-top: 5%;
+            padding: 20px;
+            background-color: #121b32;
+            border-radius: 10px;
+            box-shadow: 0px 0px 15px #00f7ff;
+        }
+        h1 {
+            font-size: 24px;
+        }
+        input, select, button {
+            display: block;
+            width: 80%;
+            margin: 10px auto;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: none;
+            text-align: center;
+        }
+        input, select {
+            background-color: #1e2a47;
+            color: white;
+        }
+        button {
+            background-color: #00f7ff;
+            color: #0a0f1c;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            background-color: #00b3b3;
+        }
+        .output, .history {
+            margin-top: 20px;
+            font-size: 16px;
+            word-wrap: break-word;
+        }
+        .strength {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        .box {
+            border: 2px solid #00f7ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px auto;
+            width: 80%;
+            background-color: #1e2a47;
+        }
+    </style>
+
+    <script>
+        function checkStrength() {
+            const password = document.getElementById("password").value;
+            let strengthText = "";
+            let strengthColor = "";
+
+            const hasLower = /[a-z]/.test(password);
+            const hasUpper = /[A-Z]/.test(password);
+            const hasNumber = /\d/.test(password);
+            const hasSpecial = /[\W]/.test(password);
+            const length = password.length;
+
+            if (length === 0) {
+                strengthText = "";
+            } else if (length < 6) {
+                strengthText = "Too Weak";
+                strengthColor = "red";
+            } else if (hasLower && hasUpper && hasNumber && hasSpecial && length >= 12) {
+                strengthText = "Very Strong";
+                strengthColor = "green";
+            } else if ((hasLower && hasUpper && hasNumber) || (hasLower && hasNumber && hasSpecial) && length >= 8) {
+                strengthText = "Strong";
+                strengthColor = "blue";
+            } else if ((hasLower && hasUpper) || (hasLower && hasNumber) || (hasUpper && hasNumber) && length >= 6) {
+                strengthText = "Medium";
+                strengthColor = "orange";
+            } else {
+                strengthText = "Weak";
+                strengthColor = "red";
+            }
+
+            document.getElementById("passwordStrength").innerText = strengthText;
+            document.getElementById("passwordStrength").style.color = strengthColor;
+        }
+
+        async function generateHash() {
+            const password = document.getElementById("password").value;
+            const algorithm = document.getElementById("algorithm").value;
+
+            const response = await fetch("/hash", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: password, algorithm: algorithm })
+            });
+
+            const data = await response.json();
+            document.getElementById("hashOutput").innerText = data.hash || data.error;
+        }
+
+        async function crackHash() {
+            const hash = document.getElementById("hashInput").value;
+            const response = await fetch("/crack", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hash: hash })
+            });
+
+            const data = await response.json();
+            document.getElementById("crackOutput").innerText = data.cracked_password || data.error;
+        }
+
+        async function loadHistory() {
+            const response = await fetch("/history");
+            const historyData = await response.json();
+
+            let historyHTML = "<h3>History:</h3><ul>";
+            historyData.forEach(item => {
+                historyHTML += <li>${item.input} → ${item.result} (${item.algorithm || item.time_taken})</li>;
+            });
+            historyHTML += "</ul>";
+
+            document.getElementById("history").innerHTML = historyHTML;
+        }
+        const socket = io();
+
+// Handle dictionary attack progress
+socket.on('progress', (data) => {
+    if (data.error) {
+        document.getElementById("crackOutput").innerText = data.error;
+        return;
+    }
+
+    if (data.done) {
+        document.getElementById("crackOutput").innerHTML = Cracked Password: <b>${data.cracked_password}</b> (Time: ${data.time_taken} sec);
+        document.getElementById("progressBar").style.width = "100%";
+        return;
+    }
+
+    document.getElementById("progressStatus").innerText = Trying: ${data.attempt};
+    document.getElementById("progressBar").style.width = ${data.progress}%;
+});
+
+// Start cracking when button is clicked
+function crackHash() {
+    const hash = document.getElementById("hashInput").value;
+    document.getElementById("crackOutput").innerText = "Cracking in progress...";
+    document.getElementById("progressBar").style.width = "0%";
+    socket.emit('crack_hash', { hash: hash });
+}
+
+    </script>
+</head>
+<body>
+
+    <h1>Password Security Tool</h1>
+
+    <!-- Hashing Section -->
+    <div class="box">
+        <h2>Generate Hash</h2>
+        <input type="text" id="password" oninput="checkStrength()" placeholder="Enter a password">
+        <p class="strength" id="passwordStrength"></p>
+        <select id="algorithm">
+            <option value="bcrypt">bcrypt</option>
+            <option value="sha256">SHA-256</option>
+            <option value="sha1">SHA-1</option>
+            <option value="md5">MD5</option>
+        </select>
+        <button onclick="generateHash()">Generate Hash</button>
+        <p class="output">Generated Hash: <span id="hashOutput"></span></p>
+    </div>
+
+
+    <!-- Cracking Section -->
+    <div class="box">
+        <h3>Crack Hash</h3>
+        <input type="text" id="hashInput" placeholder="Enter hash to crack">
+        <button onclick="crackHash()">Crack</button>
+
+        <p id="progressStatus"></p>
+        <div style="width: 80%; margin: auto; background: #555; border-radius: 5px; overflow: hidden;">
+            <div id="progressBar" style="height: 20px; width: 0%; background: #00f7ff;"></div>
+        </div>
+
+        <p id="crackOutput" class="output"></p>
+    </div>
+
+
+    <!-- History Section -->
+    <button onclick="loadHistory()">Show History</button>
+    <div id="history"></div>
+
+</body>
+</html>
